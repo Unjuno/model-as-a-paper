@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-as-a-paper"
+version = "0.1.0"
+description = "Paper-only language modeling with auditable, resumable weight updates"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["torch==2.10.0", "numpy==2.3.5", "tokenizers==0.22.2"]
+
+[project.optional-dependencies]
+modal = ["modal==1.6.3"]
+data = ["pyarrow==26.0.1", "huggingface-hub==1.16.1"]
+dev = ["pytest==9.0.2"]
+
+[project.scripts]
+map-train = "model_as_a_paper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
