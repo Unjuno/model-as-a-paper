@@ -1,0 +1,33 @@
+{
+  "model": {
+    "vocab_size": 16384,
+    "dim": 512,
+    "layers": 12,
+    "heads": 8,
+    "kv_heads": 2,
+    "ffn_dim": 1536,
+    "max_seq_len": 2048,
+    "rope_base": 10000.0,
+    "norm_eps": 1e-06
+  },
+  "training": {
+    "seq_len": 1024,
+    "long_seq_len": 2048,
+    "switch_after_tokens": 400000000,
+    "batch_tokens": 32768,
+    "micro_batch_size": 8,
+    "learning_rate": 0.0006,
+    "min_learning_rate": 6e-05,
+    "warmup_tokens": 10000000,
+    "cooldown_start": null,
+    "cooldown_tokens": 50000000,
+    "weight_decay": 0.1,
+    "grad_clip": 1.0,
+    "replay_ratio": 0.0,
+    "seed": 17,
+    "checkpoint_steps": 100,
+    "checkpoint_seconds": 120.0,
+    "max_input_positions_per_update": 2000000,
+    "precision": "bf16"
+  }
+}
