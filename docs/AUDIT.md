@@ -1,4 +1,4 @@
-# Implementation audit (in progress)
+# Implementation audit — CPU-verified v0.1
 
 Environment: container CPU only, PyTorch 2.10.0+cpu. No Modal GPU calls.
 Reviewer: author self-review, not an independent reviewer.
@@ -78,3 +78,13 @@ The generated text is not useful scientific writing. No scientific-quality claim
 - Modal Image: https://modal.com/docs/reference/modal.Image
 - Modal timeout: https://modal.com/docs/guide/timeouts
 - Provider budget: https://modal.com/docs/guide/budgets
+
+## Publication verification
+
+- Implementation commit: `93a3a7d8d0e9b231871de5e7303fc02abddeb52a`.
+- Feature branch: `feat/trainable-map44m`; PR: https://github.com/Unjuno/model-as-a-paper/pull/1
+- Implementation tree `b96c666706192c1b4be511991aee1a00d3080399` matched the tested local tree exactly.
+- 30 public text files scanned; no raw corpus, checkpoints, private-key material or credentials detected.
+- Editable package installation and wheel build also succeeded offline with installed dependencies.
+- `map-paper inspect` reports 44,577,280 parameters through the installed console entrypoint.
+- GitHub CPU CI was triggered; consult the PR checks for its current status. No automatic merge.

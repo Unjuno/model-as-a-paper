@@ -33,7 +33,7 @@ Data and tokenizer are immutable artifacts. Training and update share one traine
    accounting and invalid artifact refusal; implement checkpoint/train/eval/generate. Commit.
 4. [x] Entry points: test CLI end-to-end and argument safety; add optional HF sample
    importer, bounded Modal job, CPU CI, Japanese runbook and research limitations. Commit.
-5. [ ] Final self-review: inspect each module against Review Focus, add regression tests
+5. [x] Final self-review: inspect each module against Review Focus, add regression tests
    for findings, run the entire suite and a full-size CPU forward/backward, record results,
    scan public contents, publish branch/PR and verify remote files.
 
@@ -49,3 +49,10 @@ Data and tokenizer are immutable artifacts. Training and update share one traine
   fresh isolated local branch from the fetched public README; use GitHub connector to
   publish. Use a tested stdlib byte-BPE rather than an untestable required tokenizer wheel.
 - No subagent tool is available: separate final author self-review, explicitly disclosed.
+
+## Handoff
+
+Implementation published to PR #1 on `feat/trainable-map44m`; main unchanged.
+Remote implementation tree matched the locally tested tree; 50 CPU tests passed.
+Final documentation-only update records publication and offline packaging verification.
+CUDA, Modal execution and scientific quality remain explicitly unverified.
