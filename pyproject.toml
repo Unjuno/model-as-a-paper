@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-as-a-paper"
+version = "0.1.0"
+description = "Paper-only scratch language modeling and auditable weight updates"
+requires-python = ">=3.11"
+dependencies = ["torch==2.10.0", "numpy>=1.24,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+cloud = ["modal>=1.1.4,<2"]
+hub = ["huggingface_hub>=0.30,<2", "pyarrow>=19,<26"]
+
+[project.scripts]
+map-paper = "model_as_a_paper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
