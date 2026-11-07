@@ -137,7 +137,9 @@ class Trainer:
                                               self.cfg.seed + length + (1 if source == 'replay' else 0))
         return self.streams[key]
 
-    def step(self, target_tokens=None, new_token_budget=None):
+    def step(self, target_tokens=None, new_token_budget=None, micro_batch_size=None):
+        if micro_batch_size is not None and (type(micro_batch_size) is not int or micro_batch_size < 1):
+            raise ValueError("invalid runtime override: micro_batch_size")
         cfg = self.cfg
         target = cfg.batch_tokens if target_tokens is None else min(cfg.batch_tokens, target_tokens)
         if target < 1: raise ValueError('positive target count required')
@@ -167,8 +169,9 @@ class Trainer:
         self.model.train(); loss_sum = 0.0
         # Normalize every microbatch SUM by the whole update's target count.
         # A mean of per-microbatch means is wrong for padding/SFT/replay.
-        for start in range(0, len(examples), cfg.micro_batch_size):
-            chunk = examples[start:start + cfg.micro_batch_size]
+        micro = cfg.micro_batch_size if micro_batch_size is None else micro_batch_size
+        for start in range(0, len(examples), micro):
+            chunk = examples[start:start + micro]
             x = torch.from_numpy(np.stack([e[0] for e in chunk])).to(self.device)
             y = torch.from_numpy(np.stack([e[1] for e in chunk])).to(self.device)
             with autocast_for(self.device, cfg.precision):
@@ -257,11 +260,59 @@ def read_checkpoint(path):
     return state
 
 
+def _validate_runtime_knobs(micro_batch_size, checkpoint_steps, checkpoint_seconds):
+    for name, value in (("micro_batch_size", micro_batch_size), ("checkpoint_steps", checkpoint_steps)):
+        if value is not None and (type(value) is not int or value < 1):
+            raise ValueError(f"invalid runtime override: {name}")
+    if checkpoint_seconds is not None and (not isinstance(checkpoint_seconds, (float, int))
+                                           or not math.isfinite(checkpoint_seconds)
+                                           or checkpoint_seconds <= 0):
+        raise ValueError("invalid runtime override: checkpoint_seconds")
+
+
+def reconcile_metrics(output, checkpoint_step):
+    """On resume, archive metrics from updates never included in the last commit.
+
+    Checkpoint is the source of truth. A crash after writing an update's log
+    but before saving its checkpoint must not leave duplicate step records.
+    """
+    path = Path(output)/'metrics.jsonl'
+    if not path.exists(): return None
+    lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+    retained, stale, last = [], [], 0
+    for line in lines:
+        if not line.strip():
+            raise ValueError('empty metrics record; inspect run manually')
+        record = json.loads(line)
+        step = record.get('steps')
+        if type(step) is not int or step <= last:
+            raise ValueError('non-monotonic metrics log; inspect run manually')
+        last = step
+        if step <= checkpoint_step:
+            if stale:
+                raise ValueError('metrics have in-order corruption after an uncommitted update')
+            retained.append(line)
+        else:
+            stale.append(line)
+    if not stale: return None
+    archive = path.with_name(f'metrics.orphaned-{uuid.uuid4().hex}.jsonl')
+    # Preserve original bytes verbatim for audit before replacing the active log.
+    with archive.open('x', encoding='utf-8') as f:
+        f.writelines(stale); f.flush(); os.fsync(f.fileno())
+    tmp = path.with_name(path.name + f'.tmp-{uuid.uuid4().hex}')
+    with tmp.open('x', encoding='utf-8') as f:
+        f.writelines(retained); f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, path)
+    return str(archive)
+
+
 def train(config, corpus_path, output, *, steps=100, token_limit=500_000_000, seconds=600,
           budget_usd=None, hourly_rate=None, device='cpu', resume=False, init_from=None,
-          replay=None, allow_test_data=False, on_save=None, new_token_limit=None, start_cooldown=False):
+          replay=None, allow_test_data=False, on_save=None, new_token_limit=None, start_cooldown=False,
+          micro_batch_size=None, checkpoint_steps=None, checkpoint_seconds=None):
     """Bounded invocation. Resume preserves state; init_from starts a new objective."""
     started = time.monotonic()
+    _validate_runtime_knobs(micro_batch_size, checkpoint_steps, checkpoint_seconds)
     allowance = run_seconds(seconds, budget_usd, hourly_rate, reserve=min(60.0, seconds * 0.1))
     output = Path(output)
     if type(steps) is not int or steps <= 0 or type(token_limit) is not int or token_limit <= 0:
@@ -296,6 +347,9 @@ def train(config, corpus_path, output, *, steps=100, token_limit=500_000_000, se
     fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(fd)
     try:
+        if resume:
+            reconcile_metrics(output, worker.counters['steps'])
+            if on_save: on_save()
         if start_cooldown:
             atomic_json(output/'config.json', {'model':worker.model.cfg.to_dict(), 'training':worker.cfg.to_dict()})
         if not resume:
@@ -314,18 +368,32 @@ def train(config, corpus_path, output, *, steps=100, token_limit=500_000_000, se
                 if new_remaining is not None and new_remaining <= 0:
                     reason = 'new_token_limit'; break
                 before = time.monotonic()
-                record = worker.step(remaining, new_remaining)
+                old_tokens = worker.counters['tokens']
+                if worker.device.type == 'cuda':
+                    torch.cuda.reset_peak_memory_stats(worker.device)
+                record = worker.step(remaining, new_remaining, micro_batch_size=micro_batch_size)
+                if worker.device.type == 'cuda': torch.cuda.synchronize(worker.device)
                 record['step_seconds'] = time.monotonic() - before
+                record['input_tokens'] = record['tokens'] - old_tokens
+                record['runtime_micro_batch_size'] = (worker.cfg.micro_batch_size if micro_batch_size is None
+                                                      else micro_batch_size)
+                record['cuda_peak_memory_mib'] = (torch.cuda.max_memory_allocated(worker.device)/1024**2
+                                                  if worker.device.type == 'cuda' else None)
                 record['elapsed_seconds'] = time.monotonic() - started
                 log.write(json.dumps(record, allow_nan=False) + '\n'); log.flush()
-                if record['steps'] % worker.cfg.checkpoint_steps == 0 or time.monotonic() - last_save >= worker.cfg.checkpoint_seconds:
+                save_every_steps = worker.cfg.checkpoint_steps if checkpoint_steps is None else checkpoint_steps
+                save_every_seconds = worker.cfg.checkpoint_seconds if checkpoint_seconds is None else checkpoint_seconds
+                if record['steps'] % save_every_steps == 0 or time.monotonic() - last_save >= save_every_seconds:
                     save_checkpoint(worker, output)
                     if on_save: on_save()
                     last_save = time.monotonic()
         save_checkpoint(worker, output)
         if on_save: on_save()
         report = dict(**worker.counters, stop_reason=reason, elapsed_seconds=time.monotonic() - started,
-                      test_only=bool(worker.test_only), device=str(worker.device))
+                      test_only=bool(worker.test_only), device=str(worker.device),
+                      runtime_overrides={'micro_batch_size': micro_batch_size,
+                                         'checkpoint_steps': checkpoint_steps,
+                                         'checkpoint_seconds': checkpoint_seconds})
         atomic_json(output/'last_run.json', report)
         if on_save: on_save()
         return report

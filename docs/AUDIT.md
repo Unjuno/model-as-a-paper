@@ -88,3 +88,29 @@ The generated text is not useful scientific writing. No scientific-quality claim
 - Editable package installation and wheel build also succeeded offline with installed dependencies.
 - `map-paper inspect` reports 44,577,280 parameters through the installed console entrypoint.
 - GitHub CPU CI was triggered; consult the PR checks for its current status. No automatic merge.
+
+## 2026-11-08: 学習前準備・実行ノブ・計測の追加監査
+
+- 変更後の**70 CPU tests passed**。PyTorch 2.10.0+cpu / Python 3.13.5。
+- `preflight`: CorpusのSHA/manifest、実使用語彙、非空train windows、モデル構造、
+  parentのholdout保護、Replay Tokenizer、test fixture混入をGPU確保前に確認。
+- `bench`: モデルの実勾配更新を計時し、計測値を報告。学習checkpointの保存なし。
+- `stats`: 実行ログと最後の確定checkpointの整合を確認。
+- `--micro-batch-size`, `--checkpoint-steps`, `--checkpoint-seconds`: 再開で変更できるruntime knob。
+  保存された学習目的／データ・モデル構造は変更しない。
+- 再開の未確定ログ: 意図的にstep4の偽ログを追記して重複をRED再現し、
+  `metrics.orphaned-*.jsonl`へ退避してから継続することでGREENへ。
+- `setup_training.py`: 明示的なJSONLまたはHFの小サンプルで準備→preflightを1操作に集約。
+  HTTP取込時のstdoutでJSON結果が破壊される問題をRED再現して修正。
+- `fetch_arxiv_papers.py`: 70GB全量を取らないよう、パス・revisionを固定し、
+  remote Parquet row groupの**推定**スキャンbytes、出力bytes、論文件数で限定。
+  この経路の実ネットワーク挙動はまだ検証していない。
+- Modal: runtime knobと`start_cooldown`を公開し、保存済みcooldownだけを許す
+  resume設定照合を追加。Cloud image/API・CUDA上の実行テストは未実施。
+- 全44M本体のCPU FP32 forward/backward/Adamを再実行：有限勾配、重み変更、
+  パラメータ数44,577,280を確認。バッチ1、系列16、2スレッド。
+- コード形状・構文検査、`git diff --check`、代表的な秘密情報形式の静的スキャンを実施。
+
+この監査は実装者自身によるもの。独立第三者監査や科学QA評価を意味しない。
+更新前のチェックポイントの保護とデータのライセンス・時系列的な信頼性は引き続き
+学習実行前のゲートとする。外部GPUへ課金ジョブは送信していない。

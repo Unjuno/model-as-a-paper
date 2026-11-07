@@ -8,6 +8,7 @@ from .data import Corpus, WindowDataset, prepare, DEFAULT_LICENSES
 from .model import ModelConfig, PaperLM
 from .tokenizer import ByteBPE
 from .training import train, read_checkpoint, evaluate, generate
+from .readiness import preflight, benchmark, metrics_summary
 
 
 def load_model(path, device):
@@ -32,6 +33,19 @@ def parser():
     s.add_argument('--min-chars', type=int, default=1000)
     s.add_argument('--split', choices=['train','validation','test'])
     s.add_argument('--max-input-mib', type=int, default=256); s.add_argument('--tokenizer-mib', type=int, default=8)
+    s = subs.add_parser('preflight', help='read-only validation before any training or GPU cost')
+    s.add_argument('--config', default='configs/map44.json'); s.add_argument('--data', required=True)
+    s.add_argument('--replay'); s.add_argument('--parent')
+    s.add_argument('--device', choices=['cpu','cuda'], default='cpu')
+    s.add_argument('--allow-test-data', action='store_true')
+    s = subs.add_parser('bench', help='timed training steps without checkpoint or cloud execution')
+    s.add_argument('--config', default='configs/map44.json'); s.add_argument('--data', required=True)
+    s.add_argument('--steps', type=int, default=2); s.add_argument('--replay')
+    s.add_argument('--micro-batch-size', type=int); s.add_argument('--batch-tokens', type=int)
+    s.add_argument('--device', choices=['cpu','cuda'], default='cpu')
+    s.add_argument('--allow-test-data', action='store_true')
+    s = subs.add_parser('stats', help='summarize committed training log and checkpoint')
+    s.add_argument('--run', required=True)
     s = subs.add_parser('train')
     s.add_argument('--config', default='configs/map44.json'); s.add_argument('--data', required=True)
     s.add_argument('--output', required=True); s.add_argument('--replay')
@@ -40,6 +54,9 @@ def parser():
     s.add_argument('--steps', type=int, default=100); s.add_argument('--token-limit', type=int, default=500000000)
     s.add_argument('--new-token-limit', type=int)
     s.add_argument('--start-cooldown', action='store_true')
+    s.add_argument('--micro-batch-size', type=int, help='runtime-only memory/throughput knob; safe to change on resume')
+    s.add_argument('--checkpoint-steps', type=int, help='runtime-only save cadence')
+    s.add_argument('--checkpoint-seconds', type=float, help='runtime-only save cadence')
     s.add_argument('--seconds', type=float, default=600)
     s.add_argument('--budget-usd', type=float); s.add_argument('--hourly-rate', type=float)
     s.add_argument('--device', choices=['cpu','cuda'], default='cpu')
@@ -66,6 +83,17 @@ def main(argv=None):
             cfg = json.loads(Path(a.config).read_text())
             with torch.device('meta'): model = PaperLM(ModelConfig(**cfg['model']))
             result = {'parameters': model.parameter_count(), 'model': model.cfg.to_dict()}
+        elif a.command == 'preflight':
+            cfg = json.loads(Path(a.config).read_text())
+            result = preflight(cfg, a.data, replay=a.replay, parent=a.parent,
+                               device=a.device, allow_test_data=a.allow_test_data)
+        elif a.command == 'bench':
+            cfg = json.loads(Path(a.config).read_text())
+            result = benchmark(cfg, a.data, device=a.device, steps=a.steps, replay=a.replay,
+                               allow_test_data=a.allow_test_data, micro_batch_size=a.micro_batch_size,
+                               batch_tokens=a.batch_tokens)
+        elif a.command == 'stats':
+            result = metrics_summary(a.run)
         elif a.command == 'prepare':
             result = prepare(a.input, a.output, vocab_size=a.vocab_size, tokenizer_path=a.tokenizer,
                              allow_test_data=a.allow_test_data,
@@ -77,7 +105,9 @@ def main(argv=None):
             result = train(cfg, a.data, a.output, steps=a.steps, token_limit=a.token_limit, seconds=a.seconds,
                            budget_usd=a.budget_usd, hourly_rate=a.hourly_rate, device=a.device,
                            resume=a.resume, init_from=a.init_from, replay=a.replay, allow_test_data=a.allow_test_data,
-                           new_token_limit=a.new_token_limit, start_cooldown=a.start_cooldown)
+                           new_token_limit=a.new_token_limit, start_cooldown=a.start_cooldown,
+                           micro_batch_size=a.micro_batch_size, checkpoint_steps=a.checkpoint_steps,
+                           checkpoint_seconds=a.checkpoint_seconds)
         elif a.command == 'evaluate':
             model, tok, state = load_model(a.checkpoint, a.device); corpus = Corpus(a.data)
             if tok.fingerprint != corpus.tokenizer.fingerprint: raise ValueError('evaluation tokenizer mismatch')

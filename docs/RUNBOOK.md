@@ -2,13 +2,23 @@
 
 ## 最初の順序
 1. CPU testsとsmokeを通す。人工fixtureが本学習に混ざっていないことを確認。
-2. 版・利用条件を確認した小さな論文集合をprepareする。
-3. `manifest.json`の非空split、実語彙数、重複groupを確認する。
+2. 版・利用条件を確認した論文を`setup_training.py`でprepareする。標準はHFサンプル、
+   `--source paper-text`は圧縮Parquetの限定遠隔読出し（転送量の厳密上限ではない）。
+3. `preflight`で非空split、実語彙数、Tokenizer容量、文脈上限、親holdoutを監査。
 4. Modal Workspace予算・実クレジット・実リソース料金を確認。
-5. L4の短い単発実行。loss、有限勾配、保存・再開、実測費用を確認する。
-6. 実際のGPU速度が許容できてから実行量を増やす。科学的品質は別ゲート。
+5. L4の短い単発実行。`metrics.jsonl`のloss、step秒数、peak CUDA memory、保存・再開を確認する。
+6. `stats`でログとcheckpointの整合を監査し、microbatch等を調整後に実行量を増やす。
+   科学的品質は別ゲート。[OPTIMIZATION.md](OPTIMIZATION.md)を参照。
 
 ## 保存と再開
+
+未保存ステップの`metrics.jsonl`が残った場合、resumeはcheckpointのstepを真として
+その後のログを`metrics.orphaned-*.jsonl`へ移してから継続します。監査ファイルを
+消さず、途中で何を計算したか追跡します。`stats`は先行する未確定ログを検出して拒否します。
+
+`micro_batch_size`、`checkpoint_steps`、`checkpoint_seconds`だけはruntime overrideとして
+resumeで変更できます。checkpointの学習設定は維持します。runtime変更後のGPU数値の比較は
+同一batch/環境で行い、bitwise一致を要求しません。
 
 `latest.json`はimmutable checkpointファイル名とhashを持つatomic pointerです。
 1つ前のpointerは`previous.json`。自動保持は最新2ファイルです。
@@ -32,8 +42,8 @@ warmup→一定LRで中断・再開します。学習を継続するだけなら
 公開候補のcooldownを開始するときは、元の設定でresumeに`--start-cooldown`を追加します。
 この操作はoptimizerと累積カウンタを維持し、現在のtoken数をcooldown開始点として記録します。
 次のresumeでは更新された`runs/名前/config.json`を指定してください。warmup前のcooldownは拒否します。
-初版のModal wrapperにはこのフラグを公開していません。必要時はrunを取得してローカルCLIで使うか、
-同じ検証済みtrainer引数をwrapperへ明示的に追加してください。
+Modal wrapperにも`--start-cooldown`を公開しました。保存済みrunとチェックアウトconfigの差が
+`cooldown_start`のみなら保存済み値を使い、それ以外の設定変更は拒否します。
 
 SFTや訂正への切替は`--init-from 親run`。親重みを引き継ぎ、新しいoptimizerと目的別counterを開始します。
 親の評価用論文ID/group/hashは子に継承します。旧知識をまだ持たないモデルを「忘却しない」と評価しません。
