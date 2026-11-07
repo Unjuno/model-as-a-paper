@@ -9,7 +9,7 @@ H-Net・ES・RAG・一般事前学習済み重みは初版に含めません。
 
 ## 検証状態
 
-- CPU: 70 tests passed（2026-11-08、ローカル再検証）。実際の小型モデル学習、保存・再開、訂正学習、Replayを検証。
+- CPU: 71 tests passed（2026-11-08、ローカル再検証）。実際の小型モデル学習、保存・再開、訂正学習、Replayを検証。
 - MAP-44M本体: CPUでforward/backward/Adam更新を実行、有限勾配と重み変更を確認。
 - 中断なし8更新と3+5更新: CPU上で全重みとAdam状態がbitwise一致。
 - **未検証:** Modal image build、CUDA/BF16、GPU速度・費用、HF遠隔の実論文取得処理、科学的回答品質。

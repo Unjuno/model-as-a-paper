@@ -91,7 +91,7 @@ The generated text is not useful scientific writing. No scientific-quality claim
 
 ## 2026-11-08: 学習前準備・実行ノブ・計測の追加監査
 
-- 変更後の**70 CPU tests passed**。PyTorch 2.10.0+cpu / Python 3.13.5。
+- 変更後の**71 CPU tests passed**。PyTorch 2.10.0+cpu / Python 3.13.5。
 - `preflight`: CorpusのSHA/manifest、実使用語彙、非空train windows、モデル構造、
   parentのholdout保護、Replay Tokenizer、test fixture混入をGPU確保前に確認。
 - `bench`: モデルの実勾配更新を計時し、計測値を報告。学習checkpointの保存なし。

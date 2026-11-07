@@ -66,7 +66,6 @@ def test_remote_import_contract_with_bounded_fake_arrow(tmp_path, monkeypatch):
     import types
     from contextlib import nullcontext
     from scripts.fetch_arxiv_papers import fetch
-    import huggingface_hub
     desired=dict(paper_id='2501.01234', title='Sample theorem', primary_category='math.AG',
                  license='http://creativecommons.org/licenses/by/4.0/',
                  text='A mathematical paper with proof. ' * 100)
@@ -101,8 +100,10 @@ def test_remote_import_contract_with_bounded_fake_arrow(tmp_path, monkeypatch):
     arrow = types.ModuleType('pyarrow');arrow.parquet=parq
     monkeypatch.setitem(sys.modules,'pyarrow',arrow)
     monkeypatch.setitem(sys.modules,'pyarrow.parquet',parq)
-    monkeypatch.setattr(huggingface_hub,'HfApi',FakeAPI)
-    monkeypatch.setattr(huggingface_hub,'HfFileSystem',FakeFS)
+    fake_hub = types.ModuleType('huggingface_hub')
+    fake_hub.HfApi = FakeAPI
+    fake_hub.HfFileSystem = FakeFS
+    monkeypatch.setitem(sys.modules,'huggingface_hub',fake_hub)
     out=tmp_path/'paper.jsonl'
     result=fetch(out,max_papers=2,max_shards=1,max_output_mib=1,
                  max_scan_mib=1,category_prefixes=('math.',))
